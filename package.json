@@ -1,12 +1,25 @@
 {
   "name": "jev-cli",
+  "version": "0.1.0",
+  "bin": {
+    "jev": "./index.ts"
+  },
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "jev": "bun run index.ts",
+    "typecheck": "tsc --noEmit"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^7"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "4.0.0-rc.117",
+    "@typesafe-ai/sdk": "^0.6.0",
+    "effect": "4.0.0-rc.117"
   }
 }

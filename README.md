@@ -1,6 +1,6 @@
 # jev-cli
 
-A small Bun CLI for asking [TypeSafe AI](https://typesafe.ai/) typed questions about JSON state. It uses Effect CLI v4 for argument parsing and the TypeSafe JavaScript SDK for `choice`, `noul`, and `score` judgments.
+A small Bun CLI for asking [TypeSafe AI](https://typesafe.ai/) typed questions about JSON state. Passing `--questions` evaluates an API-shaped map of mixed questions in one call; `choice`, `noul`, and `score` remain available as scalar convenience commands. Effect CLI v4 handles arguments and the TypeSafe JavaScript SDK performs each judgment.
 
 ## Requirements
 
@@ -38,6 +38,7 @@ The top-level state may be a JSON string, object, array, or `null`.
 ## Usage
 
 ```text
+jev --state <file> --questions <file>
 jev <subcommand> [flags]
 ```
 
@@ -48,6 +49,94 @@ bun run jev <subcommand> [flags]
 ```
 
 Run `bun run jev --help` or `bun run jev <subcommand> --help` for generated Effect CLI help.
+
+### Multiple questions
+
+Evaluate multiple named questions in one TypeSafe request by passing `--questions` to the root command:
+
+```bash
+bun run jev \
+  --state ./state.json \
+  --questions ./questions.json
+```
+
+`questions.json` uses the TypeSafe API's native question map:
+
+```json
+{
+  "next_action": {
+    "type": "choice",
+    "instructions": "What should the player do next?",
+    "criteria": {
+      "run": "Escape immediately",
+      "hide": "Avoid detection and wait",
+      "fight": "Attack the threat"
+    }
+  },
+  "should_fight": {
+    "type": "noul",
+    "instructions": "Should the player fight the dragon?",
+    "criteria": {
+      "true": "Fighting is likely to achieve the player's goal",
+      "false": "Fighting creates unacceptable risk"
+    }
+  },
+  "danger": {
+    "type": "score",
+    "instructions": "How dangerous is the situation?",
+    "criteria": [
+      "Safe",
+      "Dangerous",
+      "Life-threatening"
+    ]
+  }
+}
+```
+
+Question IDs such as `next_action` are chosen by the caller. Each answer is returned under its matching ID. Question types may be mixed in the same file and are evaluated in one API call.
+
+The command prints the complete TypeSafe response as JSON, including `model`, `answers`, and `usage`:
+
+```json
+{
+  "model": "jev-1.13.0",
+  "answers": {
+    "next_action": {
+      "type": "choice",
+      "choice": "hide",
+      "confidence": 0.81,
+      "probabilities": {
+        "run": 0.12,
+        "hide": 0.81,
+        "fight": 0.07
+      }
+    },
+    "should_fight": {
+      "type": "noul",
+      "noul": 0.11
+    },
+    "danger": {
+      "type": "score",
+      "score": 1.97,
+      "confidence": 0.73,
+      "legend": {
+        "0": "Safe",
+        "1": "Dangerous",
+        "2": "Life-threatening"
+      },
+      "probabilities": {
+        "0": 0.01,
+        "1": 0.01,
+        "2": 0.98
+      }
+    }
+  },
+  "usage": {
+    "input_tokens": 420,
+    "output_tokens": 96
+  }
+}
+```
 
 ### Choice
 
@@ -116,22 +205,22 @@ Levels are zero-indexed. With three levels, the score ranges from `0` to `2` and
 
 ## Command contract
 
-All subcommands require:
+Every invocation requires:
 
 | Flag | Meaning |
 | --- | --- |
 | `--state <file>` | Path to a JSON file parsed before the API request |
-| `--prompt <text>` | Question TypeSafe evaluates against the state |
 
-Question-specific arguments:
+Mode-specific input and output:
 
-| Subcommand | Arguments | Output |
+| Mode | Input | Output |
 | --- | --- | --- |
-| `choice` | `--choices <label> <label> [...]` | Selected label |
-| `noul` | None | Probability of yes |
-| `score` | `--levels <description> <description> [...]` | Probability-weighted level index |
+| root `jev` | `--questions <file>` | Full JSON response |
+| `choice` | `--prompt <text> --choices <label> <label> [...]` | Selected label |
+| `noul` | `--prompt <text>` | Probability of yes |
+| `score` | `--prompt <text> --levels <description> <description> [...]` | Probability-weighted level index |
 
-The SDK uses its default `jev-latest` model. Successful commands write one machine-readable value followed by a newline, making the CLI suitable for shell composition.
+The SDK always uses `jev-latest`. The scalar commands write one value followed by a newline for shell composition. A multi-question request writes the API response as formatted JSON.
 
 ## Errors
 
@@ -140,6 +229,7 @@ The CLI exits unsuccessfully when:
 - `TYPESAFE_API_KEY` is missing or invalid;
 - the state file is missing or invalid JSON;
 - the state has an unsupported top-level JSON type;
+- the questions file is empty, not a JSON object, or contains an invalid question;
 - Choice receives fewer than two unique labels;
 - Score receives fewer than two levels; or
 - the TypeSafe API request fails.
@@ -159,4 +249,4 @@ Key dependencies:
 - `effect` and `@effect/platform-bun` `4.0.0-rc.117`
 - `@typesafe-ai/sdk` `0.6.x`
 
-The implementation is contained in `index.ts`. Effect CLI parses each subcommand, Bun services provide filesystem and terminal capabilities, and `TypeSafeClient.systemOne` performs the typed judgment.
+The implementation is contained in `index.ts`. Effect CLI parses the root flags and scalar subcommands, Bun services provide filesystem and terminal capabilities, and `TypeSafeClient.systemOne` performs either one scalar judgment or a mixed-question request.

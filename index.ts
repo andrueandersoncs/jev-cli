@@ -4,11 +4,12 @@ import { BunRuntime, BunServices } from "@effect/platform-bun";
 import {
   choice,
   type EntryType,
+  type Questions,
   noul,
   score,
   TypeSafeClient,
 } from "@typesafe-ai/sdk";
-import { Console, Effect } from "effect";
+import { Console, Effect, Option } from "effect";
 import { Argument, CliError, Command, Flag } from "effect/unstable/cli";
 
 const state = Flag.FileParse("state", { format: "json" }).pipe(
@@ -34,10 +35,29 @@ const toState = (value: unknown): EntryType => {
   });
 };
 
+const toQuestions = (value: unknown): Questions => {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.keys(value).length > 0
+  ) {
+    return value as Questions;
+  }
+
+  throw new CliError.UserError({
+    cause: new Error("Questions must be a non-empty JSON object"),
+  });
+};
+
 const typeSafeClient = Effect.try({
   try: () => new TypeSafeClient(),
   catch: (cause) => new CliError.UserError({ cause }),
 });
+
+const questions = Flag.FileParse("questions", { format: "json" }).pipe(
+  Flag.withDescription("Path to a JSON map of named TypeSafe questions"),
+);
 
 const choicesFlag = Flag.Boolean("choices").pipe(
   Flag.withDescription("Read the remaining arguments as possible answers"),
@@ -145,7 +165,41 @@ const scoreCommand = Command.make(
     }),
 ).pipe(Command.withDescription("Score state against an ordered rubric"));
 
-const cli = Command.make("jev").pipe(
+const cli = Command.make(
+  "jev",
+  {
+    state: Flag.optional(state),
+    questions: Flag.optional(questions),
+  },
+  ({ state, questions }) =>
+    Effect.gen(function* () {
+      if (Option.isNone(questions)) {
+        return yield* new CliError.UserError({
+          cause: new Error(
+            "Pass --questions to evaluate multiple named questions",
+          ),
+        });
+      }
+
+      if (Option.isNone(state)) {
+        return yield* new CliError.UserError({
+          cause: new Error("--state is required when --questions is provided"),
+        });
+      }
+
+      const client = yield* typeSafeClient;
+      const response = yield* Effect.tryPromise({
+        try: () =>
+          client.systemOne({
+            state: toState(state.value),
+            questions: toQuestions(questions.value),
+          }),
+        catch: (cause) => new CliError.UserError({ cause }),
+      });
+
+      yield* Console.log(JSON.stringify(response, null, 2));
+    }),
+).pipe(
   Command.withDescription("Ask Jev typed questions about a JSON state file"),
   Command.withSubcommands([choiceCommand, noulCommand, scoreCommand]),
 );

@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { BunRuntime, BunServices } from "@effect/platform-bun";
+import packageMetadata from "./package.json" with { type: "json" };
 import {
   choice,
   type EntryType,
@@ -204,7 +205,7 @@ const cli = Command.make(
   Command.withSubcommands([choiceCommand, noulCommand, scoreCommand]),
 );
 
-Command.run(cli, { version: "0.1.0" }).pipe(
+Command.run(cli, { version: packageMetadata.version }).pipe(
   Effect.provide(BunServices.layer),
   BunRuntime.runMain,
 );

@@ -23,7 +23,7 @@ export TYPESAFE_API_KEY=your_api_key
 
 You can persist the variable in your shell profile or place it in a `.env` file in the directory where you run `jev`. Bun loads that file automatically.
 
-Create a state file containing valid JSON. For example, `state.json`:
+Create a state file containing valid JSON when using `--state-file`. For example, `state.json`:
 
 ```json
 {
@@ -38,7 +38,7 @@ The top-level state may be a JSON string, object, array, or `null`.
 ## Usage
 
 ```text
-jev --state <file> --questions <file>
+jev (--state <json> | --state-file <file>) (--questions <json> | --questions-file <file>)
 jev <subcommand> [flags]
 ```
 
@@ -46,12 +46,20 @@ Run `jev --help` or `jev <subcommand> --help` for generated Effect CLI help. For
 
 ### Multiple questions
 
-Evaluate multiple named questions in one TypeSafe request by passing `--questions` to the root command:
+Evaluate multiple named questions in one TypeSafe request. Inputs may be provided inline:
 
 ```bash
 jev \
-  --state ./state.json \
-  --questions ./questions.json
+  --state '{"health":3,"enemy":"dragon"}' \
+  --questions '{"next_action":{"type":"choice","instructions":"What should the player do next?","criteria":{"run":null,"hide":null,"fight":null}}}'
+```
+
+Or read both JSON values from files:
+
+```bash
+jev \
+  --state-file ./state.json \
+  --questions-file ./questions.json
 ```
 
 `questions.json` uses the TypeSafe API's native question map:
@@ -138,16 +146,25 @@ Select one label from two or more alternatives:
 
 ```bash
 jev choice \
-  --state ./state.json \
+  --state '{"health":3,"enemy":"dragon"}' \
   --prompt "What should I do next?" \
   --choices run hide fight entice
 ```
 
-Quote labels containing spaces:
+Each input also has a file form:
 
 ```bash
 jev choice \
-  --state ./state.json \
+  --state-file ./state.json \
+  --prompt-file ./prompt.txt \
+  --choices-file ./choices.json
+```
+
+`choices.json` must contain a JSON array of strings. Quote inline labels containing spaces:
+
+```bash
+jev choice \
+  --state-file ./state.json \
   --prompt "What should I do next?" \
   --choices "run away" "hide quietly" "fight the dragon"
 ```
@@ -158,7 +175,7 @@ The command prints only the selected label:
 hide quietly
 ```
 
-`--choices` must be followed by at least two unique labels and should be the final flag in the command.
+`--choices` must be followed by at least two unique labels and should be the final flag in the command. Use exactly one of `--choices` and `--choices-file`.
 
 ### Noul
 
@@ -166,7 +183,7 @@ Evaluate a yes-or-no question:
 
 ```bash
 jev noul \
-  --state ./state.json \
+  --state-file ./state.json \
   --prompt "Should I fight the dragon?"
 ```
 
@@ -184,7 +201,7 @@ Evaluate the state against an ordered rubric:
 
 ```bash
 jev score \
-  --state ./state.json \
+  --state '{"health":3,"enemy":"dragon"}' \
   --prompt "How dangerous is this situation?" \
   --levels Safe Dangerous "Life-threatening"
 ```
@@ -195,24 +212,30 @@ The command prints the probability-weighted score:
 1.97
 ```
 
-Levels are zero-indexed. With three levels, the score ranges from `0` to `2` and may be fractional. `--levels` must be followed by at least two descriptions and should be the final flag in the command.
+Levels are zero-indexed. With three levels, the score ranges from `0` to `2` and may be fractional. `--levels` must be followed by at least two descriptions and should be the final flag in the command. `--levels-file` accepts a JSON array of strings.
 
 ## Command contract
 
-Every invocation requires:
+Every logical input requires exactly one inline flag or file flag:
 
-| Flag | Meaning |
-| --- | --- |
-| `--state <file>` | Path to a JSON file parsed before the API request |
+| Input | Inline flag | File flag |
+| --- | --- | --- |
+| State | `--state <json>` | `--state-file <json-file>` |
+| Prompt | `--prompt <text>` | `--prompt-file <text-file>` |
+| Questions | `--questions <json>` | `--questions-file <json-file>` |
+| Choices | `--choices <label> <label> [...]` | `--choices-file <json-file>` |
+| Levels | `--levels <description> <description> [...]` | `--levels-file <json-file>` |
+
+State, questions, choices, and levels files contain JSON. Prompt files contain plain text. Choices and levels files must contain JSON arrays of strings. Supplying both forms of one input is an error.
 
 Mode-specific input and output:
 
-| Mode | Input | Output |
+| Mode | Required inputs | Output |
 | --- | --- | --- |
-| root `jev` | `--questions <file>` | Full JSON response |
-| `choice` | `--prompt <text> --choices <label> <label> [...]` | Selected label |
-| `noul` | `--prompt <text>` | Probability of yes |
-| `score` | `--prompt <text> --levels <description> <description> [...]` | Probability-weighted level index |
+| root `jev` | State and questions | Full JSON response |
+| `choice` | State, prompt, and choices | Selected label |
+| `noul` | State and prompt | Probability of yes |
+| `score` | State, prompt, and levels | Probability-weighted level index |
 
 The SDK always uses `jev-latest`. The scalar commands write one value followed by a newline for shell composition. A multi-question request writes the API response as formatted JSON.
 
@@ -221,11 +244,12 @@ The SDK always uses `jev-latest`. The scalar commands write one value followed b
 The CLI exits unsuccessfully when:
 
 - `TYPESAFE_API_KEY` is missing or invalid;
-- the state file is missing or invalid JSON;
-- the state has an unsupported top-level JSON type;
-- the questions file is empty, not a JSON object, or contains an invalid question;
-- Choice receives fewer than two unique labels;
-- Score receives fewer than two levels; or
+- neither or both variants of a required input are supplied;
+- an inline JSON value or JSON file is invalid;
+- state has an unsupported top-level JSON type;
+- questions is empty, not a JSON object, or contains an invalid question;
+- choices contains fewer than two unique labels;
+- levels contains fewer than two values; or
 - the TypeSafe API request fails.
 
 Errors are rendered by Effect CLI on standard error.

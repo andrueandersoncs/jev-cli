@@ -9,19 +9,19 @@ A small Bun CLI for asking [TypeSafe AI](https://typesafe.ai/) typed questions a
 
 ## Setup
 
-Install dependencies:
+Install the CLI globally:
 
 ```bash
-bun install
+npm install --global @andrueandersoncs/jev-cli
 ```
 
-Create a `.env` file in the project root:
+Set your TypeSafe API key:
 
-```dotenv
-TYPESAFE_API_KEY=your_api_key
+```bash
+export TYPESAFE_API_KEY=your_api_key
 ```
 
-Bun loads `.env` automatically. The file is ignored by Git.
+You can persist the variable in your shell profile or place it in a `.env` file in the directory where you run `jev`. Bun loads that file automatically.
 
 Create a state file containing valid JSON. For example, `state.json`:
 
@@ -42,20 +42,14 @@ jev --state <file> --questions <file>
 jev <subcommand> [flags]
 ```
 
-During development, invoke the executable through the package script:
-
-```bash
-bun run jev <subcommand> [flags]
-```
-
-Run `bun run jev --help` or `bun run jev <subcommand> --help` for generated Effect CLI help.
+Run `jev --help` or `jev <subcommand> --help` for generated Effect CLI help. For one-off use without a global installation, replace `jev` with `npx @andrueandersoncs/jev-cli`.
 
 ### Multiple questions
 
 Evaluate multiple named questions in one TypeSafe request by passing `--questions` to the root command:
 
 ```bash
-bun run jev \
+jev \
   --state ./state.json \
   --questions ./questions.json
 ```
@@ -143,7 +137,7 @@ The command prints the complete TypeSafe response as JSON, including `model`, `a
 Select one label from two or more alternatives:
 
 ```bash
-bun run jev choice \
+jev choice \
   --state ./state.json \
   --prompt "What should I do next?" \
   --choices run hide fight entice
@@ -152,7 +146,7 @@ bun run jev choice \
 Quote labels containing spaces:
 
 ```bash
-bun run jev choice \
+jev choice \
   --state ./state.json \
   --prompt "What should I do next?" \
   --choices "run away" "hide quietly" "fight the dragon"
@@ -171,7 +165,7 @@ hide quietly
 Evaluate a yes-or-no question:
 
 ```bash
-bun run jev noul \
+jev noul \
   --state ./state.json \
   --prompt "Should I fight the dragon?"
 ```
@@ -189,7 +183,7 @@ A value near `0` favors no, a value near `1` favors yes, and a value near `0.5` 
 Evaluate the state against an ordered rubric:
 
 ```bash
-bun run jev score \
+jev score \
   --state ./state.json \
   --prompt "How dangerous is this situation?" \
   --levels Safe Dangerous "Life-threatening"

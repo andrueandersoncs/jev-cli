@@ -1,7 +1,7 @@
 {
   "name": "@andrueandersoncs/jev-cli",
-  "version": "0.2.0",
-  "description": "Ask TypeSafe AI typed questions about JSON state from the command line",
+  "version": "0.3.0",
+  "description": "Ask TypeSafe AI typed questions about JSON or plain-text state from the command line",
   "type": "module",
   "bin": {
     "jev": "dist/jev.js"

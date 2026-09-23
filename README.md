@@ -1,11 +1,11 @@
 # jev-cli
 
-A small Bun CLI for asking [TypeSafe AI](https://typesafe.ai/) typed questions about JSON state. Passing `--questions` evaluates an API-shaped map of mixed questions in one call; `choice`, `noul`, and `score` remain available as scalar convenience commands. Effect CLI v4 handles arguments and the TypeSafe JavaScript SDK performs each judgment.
+A Bun CLI for asking [TypeSafe AI](https://typesafe.ai/) typed questions about JSON or plain-text state. The root command evaluates an API-shaped map of mixed questions in one request; `choice`, `noul`, and `score` provide concise single-question commands for shell scripts. Effect CLI v4 handles arguments and the TypeSafe JavaScript SDK performs each judgment.
 
 ## Requirements
 
 - [Bun](https://bun.sh/)
-- A TypeSafe API key
+- A TypeSafe API key for live requests
 
 ## Setup
 
@@ -23,7 +23,7 @@ export TYPESAFE_API_KEY=your_api_key
 
 You can persist the variable in your shell profile or place it in a `.env` file in the directory where you run `jev`. Bun loads that file automatically.
 
-Create a state file containing valid JSON when using `--state-file`. For example, `state.json`:
+JSON state can be passed inline with `--state` or read from a JSON file with `--state-file`. For example, `state.json`:
 
 ```json
 {
@@ -33,13 +33,13 @@ Create a state file containing valid JSON when using `--state-file`. For example
 }
 ```
 
-The top-level state may be a JSON string, object, array, or `null`.
+The top-level JSON state may be a string, object, array, or `null`. Use `--text` for unquoted plain text or `--stdin` to pipe plain-text state into the command.
 
 ## Usage
 
 ```text
-jev (--state <json> | --state-file <file>) (--questions <json> | --questions-file <file>)
-jev <subcommand> [flags]
+jev (--state <json> | --state-file <file> | --text <text> | --stdin) (--questions <json> | --questions-file <file>)
+jev <choice|noul|score> [flags]
 ```
 
 Run `jev --help` or `jev <subcommand> --help` for generated Effect CLI help. For one-off use without a global installation, replace `jev` with `npx @andrueandersoncs/jev-cli`.
@@ -60,6 +60,20 @@ Or read both JSON values from files:
 jev \
   --state-file ./state.json \
   --questions-file ./questions.json
+```
+
+Plain-text state does not need JSON string quoting:
+
+```bash
+jev \
+  --text "The customer was charged twice for one order." \
+  --questions '{"is_billing":{"type":"noul","instructions":"Is this a billing issue?"}}'
+```
+
+The same state can be piped through standard input:
+
+```bash
+cat ticket.txt | jev --stdin --questions-file ./questions.json
 ```
 
 `questions.json` uses the TypeSafe API's native question map:
@@ -151,31 +165,37 @@ jev choice \
   --choices run hide fight entice
 ```
 
-Each input also has a file form:
-
-```bash
-jev choice \
-  --state-file ./state.json \
-  --prompt-file ./prompt.txt \
-  --choices-file ./choices.json
-```
-
-`choices.json` must contain a JSON array of strings. Quote inline labels containing spaces:
-
-```bash
-jev choice \
-  --state-file ./state.json \
-  --prompt "What should I do next?" \
-  --choices "run away" "hide quietly" "fight the dragon"
-```
-
-The command prints only the selected label:
+The command prints only the selected label by default:
 
 ```text
-hide quietly
+hide
 ```
 
-`--choices` must be followed by at least two unique labels and should be the final flag in the command. Use exactly one of `--choices` and `--choices-file`.
+Use criteria when the labels need descriptions that distinguish them:
+
+```bash
+jev choice \
+  --text "The customer was charged twice for one order." \
+  --prompt "Which team should handle this?" \
+  --criteria '{
+    "billing": "Charges, invoices, and payment failures",
+    "shipping": "Delivery delays and lost packages",
+    "returns": "Refunds and exchanges"
+  }'
+```
+
+Criteria can also be stored in a JSON file:
+
+```bash
+jev choice \
+  --state-file ./ticket.json \
+  --prompt-file ./prompt.txt \
+  --criteria-file ./teams.json
+```
+
+`--criteria` and `--criteria-file` accept a JSON object with at least two labels. Each description may be a JSON string, object, array, or `null`. For undescribed labels, use `--choices <label...>` or a `--choices-file` containing a JSON array of strings.
+
+Pass exactly one of `--choices`, `--choices-file`, `--criteria`, or `--criteria-file`. Inline values after `--choices` may contain spaces when quoted, and `--choices` should be the final flag in the command.
 
 ### Noul
 
@@ -183,17 +203,27 @@ Evaluate a yes-or-no question:
 
 ```bash
 jev noul \
-  --state-file ./state.json \
-  --prompt "Should I fight the dragon?"
+  --text "Production checkout is unavailable for every customer." \
+  --prompt "Does this require urgent escalation?"
 ```
 
 The command prints the probability of **yes**, from `0` to `1`:
 
 ```text
-0.11
+0.89
 ```
 
-A value near `0` favors no, a value near `1` favors yes, and a value near `0.5` indicates similar probability for both outcomes.
+Optionally describe either or both outcomes:
+
+```bash
+jev noul \
+  --state-file ./incident.json \
+  --prompt "Does this require urgent escalation?" \
+  --true-criteria "Immediate widespread customer impact" \
+  --false-criteria "Normal support handling is sufficient"
+```
+
+A value near `0` favors no, a value near `1` favors yes, and a value near `0.5` means yes and no have similar probability.
 
 ### Score
 
@@ -201,58 +231,118 @@ Evaluate the state against an ordered rubric:
 
 ```bash
 jev score \
-  --state '{"health":3,"enemy":"dragon"}' \
-  --prompt "How dangerous is this situation?" \
-  --levels Safe Dangerous "Life-threatening"
+  --text "The export button crashes, but CSV export still works." \
+  --prompt "How severe is this issue?" \
+  --levels Cosmetic Degraded Blocking
 ```
 
 The command prints the probability-weighted score:
 
 ```text
-1.97
+1.10
 ```
 
-Levels are zero-indexed. With three levels, the score ranges from `0` to `2` and may be fractional. `--levels` must be followed by at least two descriptions and should be the final flag in the command. `--levels-file` accepts a JSON array of strings.
+Levels are zero-indexed. With three levels, the score ranges from `0` to `2` and may be fractional. `--levels` must contain at least two descriptions and should be the final flag in the command. `--levels-file` accepts a JSON array of strings.
+
+### Output formats
+
+Scalar subcommands accept `--format`:
+
+| Format | Output |
+| --- | --- |
+| `value` | Selected label, yes probability, or weighted score; default |
+| `json` | Typed answer with probabilities, confidence when available, and the score legend when applicable |
+| `response` | Complete SDK response with `model`, `answers`, and `usage` |
+
+For example:
+
+```bash
+jev choice \
+  --text "The customer was charged twice." \
+  --prompt "Which team should handle this?" \
+  --format json \
+  --choices billing shipping returns
+```
+
+```json
+{
+  "type": "choice",
+  "choice": "billing",
+  "confidence": 1,
+  "probabilities": {
+    "billing": 1,
+    "shipping": 0,
+    "returns": 0
+  }
+}
+```
+
+The root `jev` command always prints the complete response.
+
+### Dry runs
+
+Add `--dry-run` to any command to validate its CLI inputs and print the exact SDK request without calling the API:
+
+```bash
+jev choice \
+  --text "The customer was charged twice." \
+  --prompt "Which team should handle this?" \
+  --criteria-file ./teams.json \
+  --dry-run
+```
+
+Dry-run output is request JSON regardless of `--format`.
 
 ## Command contract
 
-Every logical input requires exactly one inline flag or file flag:
+Each command requires exactly one state source:
 
-| Input | Inline flag | File flag |
+| Source | Meaning |
+| --- | --- |
+| `--state <json>` | Inline JSON |
+| `--state-file <file>` | JSON read from a file |
+| `--text <text>` | Inline plain text |
+| `--stdin` | Plain text read from standard input |
+
+Other inputs:
+
+| Input | Accepted forms |
+| --- | --- |
+| Prompt | Exactly one of `--prompt <text>` or `--prompt-file <file>` |
+| Questions | Exactly one of `--questions <json>` or `--questions-file <file>` |
+| Choice alternatives | Exactly one of `--choices`, `--choices-file`, `--criteria`, or `--criteria-file` |
+| Score levels | Exactly one of `--levels` or `--levels-file` |
+| Noul criteria | Optional `--true-criteria` and `--false-criteria` |
+
+JSON files must contain valid JSON. Prompt files contain plain text. `--choices-file` and `--levels-file` contain JSON arrays of strings; criteria files contain JSON objects keyed by choice label.
+
+Mode-specific behavior:
+
+| Mode | Required question inputs | Default output |
 | --- | --- | --- |
-| State | `--state <json>` | `--state-file <json-file>` |
-| Prompt | `--prompt <text>` | `--prompt-file <text-file>` |
-| Questions | `--questions <json>` | `--questions-file <json-file>` |
-| Choices | `--choices <label> <label> [...]` | `--choices-file <json-file>` |
-| Levels | `--levels <description> <description> [...]` | `--levels-file <json-file>` |
+| root `jev` | Questions | Complete JSON response |
+| `choice` | Prompt and choice alternatives | Selected label |
+| `noul` | Prompt | Probability of yes |
+| `score` | Prompt and levels | Probability-weighted level index |
 
-State, questions, choices, and levels files contain JSON. Prompt files contain plain text. Choices and levels files must contain JSON arrays of strings. Supplying both forms of one input is an error.
-
-Mode-specific input and output:
-
-| Mode | Required inputs | Output |
-| --- | --- | --- |
-| root `jev` | State and questions | Full JSON response |
-| `choice` | State, prompt, and choices | Selected label |
-| `noul` | State and prompt | Probability of yes |
-| `score` | State, prompt, and levels | Probability-weighted level index |
-
-The SDK always uses `jev-latest`. The scalar commands write one value followed by a newline for shell composition. A multi-question request writes the API response as formatted JSON.
+The SDK uses its default model, currently `jev-latest`. Scalar `value` output is one value followed by a newline for shell composition.
 
 ## Errors
 
 The CLI exits unsuccessfully when:
 
-- `TYPESAFE_API_KEY` is missing or invalid;
-- neither or both variants of a required input are supplied;
+- `TYPESAFE_API_KEY` is missing or invalid for a live request;
+- zero or multiple state sources are supplied;
+- zero or multiple variants of another required input are supplied;
 - an inline JSON value or JSON file is invalid;
-- state has an unsupported top-level JSON type;
+- JSON state has an unsupported top-level type;
 - questions is empty, not a JSON object, or contains an invalid question;
 - choices contains fewer than two unique labels;
+- choice criteria is not an object with at least two labels or contains an invalid description;
 - levels contains fewer than two values; or
 - the TypeSafe API request fails.
 
-Errors are rendered by Effect CLI on standard error.
+Errors are rendered by Effect CLI on standard error. `--dry-run` performs local CLI validation but cannot report server-side validation or authentication failures.
 
 ## Development
 
